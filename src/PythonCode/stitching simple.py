@@ -4,7 +4,7 @@ import os
 #print("Current working directory:", os.getcwd())
 
 # check to see if the images exist:
-image_files = ["image1.jpeg", "image2.jpeg", "image3.jpeg"]
+image_files = ["image1.png", "image2.png", "image3.png"]
 
 for image_path in image_files:
     if not os.path.exists(image_path):
@@ -14,7 +14,7 @@ for image_path in image_files:
 
 
 # Load your images
-image_files = ["image1.jpeg", "image2.jpeg", "image3.jpeg"] #, "image3.jpg"]
+image_files = ["image1.png", "image2.png", "image3.png"] #, "image3.jpg"]
 images = [cv2.imread(file) for file in image_files]
 
 # Initialize the stitcher
@@ -29,7 +29,7 @@ if status == cv2.Stitcher_OK:
     a4_height = 3508
     stitched_resized = cv2.resize(stitched, (a4_width, a4_height))
     cv2.imshow("Stitched Image", stitched)
-    cv2.imwrite("stitched_result.jpeg", stitched)
+    cv2.imwrite("stitched_result.png", stitched)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 else:
