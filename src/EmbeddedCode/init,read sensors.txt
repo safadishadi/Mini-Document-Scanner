@@ -1,0 +1,80 @@
+#include <Wire.h>
+#include <MPU6050.h>
+#include <VL53L0X.h>
+
+// Define the I2C pins (GPIO13 for SDA and GPIO14 for SCL)
+#define SDA_PIN 13
+#define SCL_PIN 14
+
+MPU6050 mpu;
+VL53L0X lox;
+
+void scanI2C() {
+  Serial.println("Scanning for I2C devices...");
+  for (uint8_t address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("Found device at 0x");
+      Serial.println(address, HEX);
+    }
+  }
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  
+  scanI2C();
+
+  // Initialize I2C with custom SDA and SCL pins
+  Wire.begin(SDA_PIN, SCL_PIN);
+  // Initialize VL53L0X
+  if (!lox.init()) {
+    Serial.println("Failed to initialize VL53L0X!");
+    while (1);
+  }
+  Serial.println("VL53L0X initialized.");
+  lox.setTimeout(5000);
+  lox.startContinuous();
+  Serial.println("VL53L0X configured.");
+
+
+  
+  // Initialize MPU6050
+  mpu.initialize();
+  if (!mpu.testConnection()) {
+    Serial.println("Failed to initialize MPU6050!");
+    while (1);
+  }
+  Serial.println("MPU6050 initialized.");
+  
+}
+
+void loop() {
+  // Read MPU6050 data (accelerometer and gyroscope)
+  int16_t a, g, temp;
+  //TODO: init g and a to 0
+  a=mpu.getAccelerationX();
+  g=mpu.getRotationX();
+  Serial.print("Accel X: "); Serial.print(a); 
+  //Serial.print(", Y: "); Serial.print(a.acceleration.y); 
+  //Serial.print(", Z: "); Serial.println(a.acceleration.z);
+  
+  Serial.print("Gyro X: "); Serial.print(g); 
+  //Serial.print(", Y: "); Serial.print(g.gyro.y); 
+  //Serial.print(", Z: "); Serial.println(g.gyro.z);
+  
+  // Read VL53L0X distance data
+  Serial.println("b1 ");
+  uint16_t distance = lox.readRangeSingleMillimeters();
+  Serial.println("b2 ");
+  Serial.print("Distance: "); 
+  Serial.print(distance); 
+  Serial.println(" mm");
+  Serial.println("b3 ");
+  if (lox.timeoutOccurred()) {
+    Serial.println("VL53L0X timeout");
+  }
+  
+  delay(10000);  // Delay to make output readable
+}
