@@ -18,63 +18,68 @@ void scanI2C() {
       Serial.println(address, HEX);
     }
   }
+  Serial.println("Finished scanning for I2C devices...");
 }
 
 
 void setup() {
   Serial.begin(115200);
-  
-  scanI2C();
 
   // Initialize I2C with custom SDA and SCL pins
   Wire.begin(SDA_PIN, SCL_PIN);
+
+  // Scan and print I2C devices
+  scanI2C();
+
+  // Initialize MPU6050
+  mpu.initialize();
+  if (!mpu.testConnection()) {
+    Serial.println("Failed to initialize MPU6050!");
+    while (1)
+      ;
+  }
+  Serial.println("MPU6050 initialized.");
+
   // Initialize VL53L0X
   if (!lox.init()) {
     Serial.println("Failed to initialize VL53L0X!");
-    while (1);
+    while (1)
+      ;
   }
   Serial.println("VL53L0X initialized.");
   lox.setTimeout(5000);
   lox.startContinuous();
   Serial.println("VL53L0X configured.");
 
-
-  
-  // Initialize MPU6050
-  mpu.initialize();
-  if (!mpu.testConnection()) {
-    Serial.println("Failed to initialize MPU6050!");
-    while (1);
-  }
-  Serial.println("MPU6050 initialized.");
-  
 }
 
 void loop() {
   // Read MPU6050 data (accelerometer and gyroscope)
   int16_t a, g, temp;
   //TODO: init g and a to 0
-  a=mpu.getAccelerationX();
-  g=mpu.getRotationX();
-  Serial.print("Accel X: "); Serial.print(a); 
-  //Serial.print(", Y: "); Serial.print(a.acceleration.y); 
+  a = mpu.getAccelerationX();
+  g = mpu.getRotationX();
+  Serial.print("Accel X: ");
+  Serial.println(a);
+  //Serial.print(", Y: "); Serial.print(a.acceleration.y);
   //Serial.print(", Z: "); Serial.println(a.acceleration.z);
-  
-  Serial.print("Gyro X: "); Serial.print(g); 
-  //Serial.print(", Y: "); Serial.print(g.gyro.y); 
+
+  Serial.print("Gyro X: ");
+  Serial.println(g);
+  //Serial.print(", Y: "); Serial.print(g.gyro.y);
   //Serial.print(", Z: "); Serial.println(g.gyro.z);
-  
+
   // Read VL53L0X distance data
   Serial.println("b1 ");
   uint16_t distance = lox.readRangeSingleMillimeters();
   Serial.println("b2 ");
-  Serial.print("Distance: "); 
-  Serial.print(distance); 
+  Serial.print("Distance: ");
+  Serial.print(distance);
   Serial.println(" mm");
   Serial.println("b3 ");
   if (lox.timeoutOccurred()) {
     Serial.println("VL53L0X timeout");
   }
-  
-  delay(10000);  // Delay to make output readable
+
+  delay(1000);  // Delay to 10000 to make output readable
 }

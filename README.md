@@ -9,6 +9,20 @@ This project is is a software and hardware implementation of a miniature sized d
 * The microcontrollers code is implemented in c in arduinoIDE, it initializes and controlles the sensores (Camera, Laser Distance, Gyroscope, Accelerometer, Antenna).
 * The main stitching algorithm is implemented in python, it consists of a basic server that Recieves images corresponding to parts of the document and reconstructs them into a final result.
 
+**Operation Guide:**
+
+- Updating embedded code and uploading it to esp32:
+
+  - Connect GPIO 0 to GND
+  - In Arduino IDE press upload
+  - Remove GPIO 0 from GND only once compilation and upload are done
+  - Press reset on ESP32 board
+- connecting esp32 to Wifi:
+
+  - update the desired network name and password in the embedded code specified field. upon powering up, the esp32 will connect automatically.
+- connecting laptop or PC to the same local network
+- Typing 172.20.10.3 in browser to see captured images
+
 **Authors:**
 
 Hani Sabihi
