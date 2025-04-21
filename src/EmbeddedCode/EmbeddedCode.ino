@@ -45,7 +45,7 @@ void startCameraServer() {
     WiFiClient client = server.available();  // Listen for incoming clients
     if (!client) {
       Serial.println("New Client waiting");
-      delay(1000);
+      delay(100);
       continue;
     }
 
@@ -54,7 +54,7 @@ void startCameraServer() {
     // Wait until the client sends a request
     while (!client.available()) {
       Serial.println("New Client Unavailable");
-      delay(1000);
+      delay(100);
     }
 
     String request = client.readStringUntil('\r');
@@ -90,8 +90,15 @@ void startCameraServer() {
 
     //digitalWrite(FLASH_GPIO_NUM, LOW);//Turn flash off
 
-    delay(3000);  // A brief delay before closing the connection
+    delay(1500);  // A brief delay before closing the connection
     Serial.println("Image sent");
+    digitalWrite(FLASH_GPIO_NUM, LOW);
+    delay(100);
+    digitalWrite(FLASH_GPIO_NUM, HIGH);
+    delay(100);
+    digitalWrite(FLASH_GPIO_NUM, LOW);
+    delay(100);
+    digitalWrite(FLASH_GPIO_NUM, HIGH);
     client.stop();  // Close the client connection
   }
 }
@@ -104,8 +111,11 @@ void setup() {
   // Connect to Wi-Fi
   Serial.println("Connecting to Wi-Fi...");
   Serial.println(PORT_NUMBER);
+  Serial.println("Starting...2");
   WiFi.begin(ssid, password);
+  Serial.println("Starting...3");
   unsigned long startMillis = millis();
+  Serial.println("Starting...4");
   unsigned long timeout = 30000;  // 30 seconds timeout
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
@@ -157,7 +167,7 @@ void setup() {
 
   //set the flash gpio pin to output mode
   pinMode(FLASH_GPIO_NUM,OUTPUT);
-  digitalWrite(FLASH_GPIO_NUM, HIGH);//initially off
+  digitalWrite(FLASH_GPIO_NUM, LOW);//initially off
   // Start the camera server
   startCameraServer();
 }

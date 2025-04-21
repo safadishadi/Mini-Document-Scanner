@@ -17,11 +17,12 @@ This project is is a software and hardware implementation of a miniature sized d
   - In Arduino IDE press upload
   - Remove GPIO 0 from GND only once compilation and upload are done
   - Press reset on ESP32 board
-- connecting esp32 to Wifi:
+- Connecting esp32 to Wifi:
 
   - update the desired network name and password in the embedded code specified field. upon powering up, the esp32 will connect automatically.
-- connecting laptop or PC to the same local network
+- Connecting laptop or PC to the same local network
 - Typing 172.20.10.3 in browser to see captured images
+- Running 1 of 2 python files to either test connection or capture 10 images
 
 **Authors:**
 
