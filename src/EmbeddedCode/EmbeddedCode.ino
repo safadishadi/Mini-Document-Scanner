@@ -39,6 +39,8 @@ const char* password = "1234shadi";
 WiFiServer server(PORT_NUMBER); // Set up a web server on port 80
 camera_fb_t *fb;
 esp_err_t err;
+float Ax, Ay, Az, Gx, Gy, Gz;
+uint16_t distance;
 
 void scanI2C() {
   Serial.println("Scanning for I2C devices...");
@@ -52,21 +54,7 @@ void scanI2C() {
   Serial.println("Finished scanning for I2C devices...");
 }
 
-void handleCaptureRequest(WiFiClient& client) {
-  int16_t Ax=0, Ay=0, Az=0, Gx=0, Gy=0, Gz=0;
-  uint16_t distance = 0;
-
-  // Read sensor values
-  Ax = mpu.getAccelerationX();
-  Ay = mpu.getAccelerationY();
-  Az = mpu.getAccelerationZ();
-  Gx = mpu.getRotationX();
-  Gy = mpu.getRotationY();
-  Gz = mpu.getRotationZ();
-  distance = lox.readRangeSingleMillimeters();
-  if (lox.timeoutOccurred()) {
-    Serial.println("VL53L0X timeout");
-  }
+void handleCaptureRequest(WiFiClient& client, float dxt, float dyt, float dzt, float Gxt, float Gyt, float Gzt) {
 
   // Capture the image
   digitalWrite(FLASH_GPIO_NUM, HIGH); // Turn flash on
@@ -92,14 +80,19 @@ void handleCaptureRequest(WiFiClient& client) {
   client.print("Content-Type: application/json\r\n");
   client.print("Content-Length: ");
   
+  distance = lox.readRangeSingleMillimeters();
+  if (lox.timeoutOccurred()) {
+    Serial.println("VL53L0X timeout");
+  }
+
   String json = "{";
-  json += "\"accel_x\":" + String(Ax) + ",";
-  json += "\"accel_y\":" + String(Ay) + ",";
-  json += "\"accel_z\":" + String(Az) + ",";
-  json += "\"gyro_x\":" + String(Gx) + ",";
-  json += "\"gyro_y\":" + String(Gy) + ",";
-  json += "\"gyro_z\":" + String(Gz) + ",";
-  json += "\"distance_mm\":" + String(distance);
+  json += "\"displacement_cm_x\":" + String(dxt) + ",";
+  json += "\"displacement_cm_y\":" + String(dyt) + ",";
+  json += "\"displacement_cm_z\":" + String(dzt) + ",";
+  json += "\"gyro_x\":" + String(Gxt) + ",";
+  json += "\"gyro_y\":" + String(Gyt) + ",";
+  json += "\"gyro_z\":" + String(Gzt) + ",";
+  json += "\"distance_cm\":" + String(distance/10.0f);
   json += "}";
 
   client.print(json.length());
@@ -119,17 +112,50 @@ void handleCaptureRequest(WiFiClient& client) {
 
   esp_camera_fb_return(fb);
   digitalWrite(FLASH_GPIO_NUM, LOW); // Turn flash off
+  return;
 }
 
 void startCameraServer() {
+  float dxt=0, dyt=0, dzt=0, dx=0, dy=0, dz=0, vx=0, vy=0, vz=0, Gxt=0, Gyt=0, Gzt=0, passedTime=0, numSamples=0;
+  float dt = 0.02f;  // 20 ms delay = 0.02 s
+  float prevAx = 0, alpha = 0.5; // tune as needed
+  unsigned long lastTime, nowTime;
+
   server.begin();
   Serial.println("Camera server started");
+  lastTime = millis();
 
   while (true) {
     WiFiClient client = server.available(); // Listen for incoming clients
     if (!client) {
       Serial.println("New Client waiting");
-      delay(100);
+      // Read sensor values
+      Ax = (mpu.getAccelerationX()/ 16384.0f)* 980.665f; // in cm/s^2
+      Ax = alpha * Ax + (1 - alpha) * prevAx;
+      prevAx = Ax;
+      Ay = (mpu.getAccelerationY()/ 16384.0f)* 980.665f;
+      Az = (mpu.getAccelerationZ()/ 16384.0f)* 980.665f;
+      // Integrate acceleration to update velocity
+      vx += Ax * dt;
+      vy += Ay * dt;
+      vz += Az * dt;
+      // Integrate velocity to update displacement
+      dxt += vx * dt;
+      dyt += vy * dt;
+      dzt += vz * dt;
+
+      Gxt += mpu.getRotationX()/ 131.0;
+      Gyt += mpu.getRotationY()/ 131.0;
+      Gzt += mpu.getRotationZ()/ 131.0;
+
+      //TODO: delete
+      Ax=mpu.getAccelerationX();
+      Gx=mpu.getRotationX();
+      Serial.print("Raw Ax: "); Serial.println((Ax/ 16384.0f));//(  Ax > 150 ? Ax : 0 );
+      Serial.print(" Raw Gx: "); Serial.println(Gx);
+
+      numSamples++;
+      delay(20);
       continue;
     }
 
@@ -137,19 +163,44 @@ void startCameraServer() {
 
     // Wait until the client sends a request
     while (!client.available()) {
-      delay(100);
-    }
+      Serial.println("Waiting For Client Request.");
+      // Read sensor values
+      Ax = (mpu.getAccelerationX()/ 16384.0f)* 980.665f; // in cm/s^2
+      Ax = alpha * Ax + (1 - alpha) * prevAx;
+      prevAx = Ax;
+      Ay = (mpu.getAccelerationY()/ 16384.0f)* 980.665f;
+      Az = (mpu.getAccelerationZ()/ 16384.0f)* 980.665f;
+      // Integrate acceleration to update velocity
+      vx += Ax * dt;
+      vy += Ay * dt;
+      vz += Az * dt;
+      // Integrate velocity to update displacement
+      dxt += vx * dt;
+      dyt += vy * dt;
+      dzt += vz * dt;
 
+      Gxt += mpu.getRotationX()/ 131.0;
+      Gyt += mpu.getRotationY()/ 131.0;
+      Gzt += mpu.getRotationZ()/ 131.0;
+      numSamples++;
+      delay(10);
+    }
+    nowTime = millis();
+    passedTime = (nowTime - lastTime)/1000.0;
+    lastTime = millis();
     String request = client.readStringUntil('\r');
     client.flush(); // Clear the client buffer
 
     if (request.indexOf("GET /capture") >= 0) {
       Serial.println("Image and sensor data requested");
-      handleCaptureRequest(client);
+      handleCaptureRequest(client, dxt, dyt, dzt, Gxt, Gyt, Gzt);
       client.stop();
+      dxt=0; dyt=0; dzt=0; Gxt=0; Gyt=0; Gzt=0; numSamples=0;
+      vx = vy = vz = 0;
       continue;
     }
-
+    dxt=0; dyt=0; dzt=0; Gxt=0; Gyt=0; Gzt=0; numSamples=0;
+    vx = vy = vz = 0;
     client.stop();
   }
 }
@@ -161,6 +212,9 @@ void setup() {
 
   // Initialize I2C with custom SDA and SCL pins
   Wire.begin(SDA_PIN, SCL_PIN);
+  
+  // I2C, 100 kHz for stability
+  Wire.setClock(100000); 
 
   // Scan and print I2C devices
   scanI2C();
@@ -168,6 +222,7 @@ void setup() {
 
   // Initialize MPU6050
   mpu.initialize();
+  delay(100);
   if (!mpu.testConnection()) {
     Serial.println("Failed to initialize MPU6050!");
     while (1);

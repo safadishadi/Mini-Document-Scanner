@@ -3,6 +3,7 @@ import json
 from io import BytesIO
 from PIL import Image
 import os
+import time
 
 # The IP address of the ESP32 (replace with your actual ESP32 IP address)
 esp32_ip = "http://172.20.10.3/capture"
@@ -70,4 +71,5 @@ def get_sensor_data_and_image(iteration):
 for i in range(1, 11):
     print(f"\n--- Iteration {i} ---")
     get_sensor_data_and_image(i)
+    time.sleep(2)
     print(f"Iteration {i} complete.\n")
