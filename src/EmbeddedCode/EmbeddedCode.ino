@@ -2,8 +2,11 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <Arduino.h>
-#include <MPU6050.h>
+#include <MPU6050_6Axis_MotionApps20.h>
 #include <VL53L0X.h>
+#include "I2Cdev.h"
+
+
 
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
@@ -24,12 +27,13 @@
 
 #define FLASH_GPIO_NUM     4
 
-#define SDA_PIN 13
-#define SCL_PIN 14
+#define SDA_PIN           13
+#define SCL_PIN           14
+#define INTERRUPT_PIN      2  // MPU6050 INT pin connected to GPIO 2
 
 #define PORT_NUMBER       80
 
-MPU6050 mpu;
+MPU6050 mpu(0x68, &Wire);
 VL53L0X lox;
 
 // Wi-Fi credentials
@@ -39,9 +43,30 @@ const char* password = "1234shadi";
 WiFiServer server(PORT_NUMBER); // Set up a web server on port 80
 camera_fb_t *fb;
 esp_err_t err;
-float Ax, Ay, Az, Gx, Gy, Gz;
+
+float Gx, Gy, Gz;
 float XAccelOffset, YAccelOffset, ZAccelOffset, XGyroOffset, YGyroOffset, ZGyroOffset;
 uint16_t distance;
+
+bool dmpReady = false;
+uint8_t devStatus;
+uint16_t packetSize;
+uint8_t fifoBuffer[64];
+
+// Sensor variables
+Quaternion q;
+VectorInt16 aa, aaReal;
+VectorFloat gravity;
+
+// Filtered output
+float filteredAx = 0, filteredAy = 0, filteredAz = 0;
+const float alpha = 0.2; // Smoothing factor: lower = smoother (try 0.05–0.2)
+
+// Interrupt flag
+volatile bool mpuInterrupt = false;
+void dmpDataReady() {
+  mpuInterrupt = true;
+}
 
 void scanI2C() {
   Serial.println("Scanning for I2C devices...");
@@ -149,106 +174,6 @@ void handleCaptureRequest(WiFiClient& client, float dxt, float dyt, float dzt, f
   return;
 }
 
-void startCameraServer() {
-  float dxt=0, dyt=0, dzt=0, dx=0, dy=0, dz=0, vx=0, vy=0, vz=0, Gxt=0, Gyt=0, Gzt=0, passedTime=0, numSamples=0;
-  float dt = 0.014f;  // 14 ms delay = 0.014 s
-  float prevAx = 0, alpha = 0.5; // tune as needed
-  unsigned long lastTime, nowTime;
-
-  server.begin();
-  Serial.println("Camera server started");
-  lastTime = millis();
-
-  while (true) {
-    WiFiClient client = server.available(); // Listen for incoming clients
-    if (!client) {
-      Serial.println("New Client waiting");
-      // Read sensor values
-      Ax = ((mpu.getAccelerationX() - XAccelOffset)/ 16384.0f)* 980.665f; // in cm/s^2
-
-      //TODO:remove
-      // Ax = alpha * Ax + (1 - alpha) * prevAx;
-      // prevAx = Ax;
-
-      Ay = (mpu.getAccelerationY()/ 16384.0f)* 980.665f;
-      Az = (mpu.getAccelerationZ()/ 16384.0f)* 980.665f;
-      // Integrate acceleration to update velocity
-      vx += Ax * dt;
-      vy += Ay * dt;
-      vz += Az * dt;
-      // Integrate velocity to update displacement
-      dxt += vx * dt;
-      dyt += vy * dt;
-      dzt += vz * dt;
-
-      Gxt += mpu.getRotationX()/ 131.0;
-      Gyt += mpu.getRotationY()/ 131.0;
-      Gzt += mpu.getRotationZ()/ 131.0;
-
-      //TODO: delete
-      nowTime = micros();
-      passedTime = (nowTime - lastTime)/1000.0;
-      lastTime = micros();
-
-      Ax = (mpu.getAccelerationX() - XAccelOffset)/16384.0f* 980.665f;
-      Serial.print("Passed Time: "); Serial.println(passedTime);
-      Serial.print("Raw Ax: "); Serial.println(Ax);
-      
-
-      numSamples++;
-      delay(10);
-      continue;
-    }
-
-    Serial.println("New Client Connected");
-
-    // Wait until the client sends a request
-    while (!client.available()) {
-      Serial.println("Waiting For Client Request.");
-      // // Read sensor values
-      // Ax = (mpu.getAccelerationX()/ 16384.0f)* 980.665f; // in cm/s^2
-      // Ax = alpha * Ax + (1 - alpha) * prevAx;
-      // prevAx = Ax;
-      // Ay = (mpu.getAccelerationY()/ 16384.0f)* 980.665f;
-      // Az = (mpu.getAccelerationZ()/ 16384.0f)* 980.665f;
-      // // Integrate acceleration to update velocity
-      // vx += Ax * dt;
-      // vy += Ay * dt;
-      // vz += Az * dt;
-      // // Integrate velocity to update displacement
-      // dxt += vx * dt;
-      // dyt += vy * dt;
-      // dzt += vz * dt;
-
-      // Gxt += mpu.getRotationX()/ 131.0;
-      // Gyt += mpu.getRotationY()/ 131.0;
-      // Gzt += mpu.getRotationZ()/ 131.0;
-      // numSamples++;
-      delay(10);
-    }
-
-    //TODO:remove
-    // nowTime = millis();
-    // passedTime = (nowTime - lastTime)/1000.0;
-    // lastTime = millis();
-    
-    String request = client.readStringUntil('\r');
-    client.flush(); // Clear the client buffer
-
-    if (request.indexOf("GET /capture") >= 0) {
-      Serial.println("Image and sensor data requested");
-      handleCaptureRequest(client, dxt, dyt, dzt, Gxt, Gyt, Gzt);
-      client.stop();
-      dxt=0; dyt=0; dzt=0; Gxt=0; Gyt=0; Gzt=0; numSamples=0;
-      vx = vy = vz = 0;
-      continue;
-    }
-    dxt=0; dyt=0; dzt=0; Gxt=0; Gyt=0; Gzt=0; numSamples=0;
-    vx = vy = vz = 0;
-    client.stop();
-  }
-}
-
 void setup() {
   // Start the serial monitor for debugging
   Serial.begin(115200);
@@ -257,8 +182,8 @@ void setup() {
   // Initialize I2C with custom SDA and SCL pins
   Wire.begin(SDA_PIN, SCL_PIN);
   
-  // I2C, 100 kHz for stability
-  Wire.setClock(100000); 
+  // I2C 400k for speed, 100k for stability, 200k mid
+  Wire.setClock(200000); 
 
   // Scan and print I2C devices
   scanI2C();
@@ -283,18 +208,39 @@ void setup() {
   lox.startContinuous();
   Serial.println("VL53L0X configured.");
 
-  //TODO:remove
-  Serial.println("x accel before calibration");
-  Serial.println(mpu.getXAccelOffset());
+  Serial.println(F("Initializing DMP..."));
+  devStatus = mpu.dmpInitialize();
+
+  // Optional: set offsets here if known
+  mpu.setXGyroOffset(0);
+  mpu.setYGyroOffset(0);
+  mpu.setZGyroOffset(0);
+  mpu.setXAccelOffset(0);
+  mpu.setYAccelOffset(0);
+  mpu.setZAccelOffset(0);
 
   //calibrate MPU
-  Serial.println("MPU Calibration Start.");
-  calibrateMPU();
-  Serial.println("MPU Calibration Done.");
+  // Serial.println("MPU Calibration Start.");
+  // calibrateMPU();
+  // Serial.println("MPU Calibration Done.");
+  if (devStatus == 0) {
+    // Calibrate and enable DMP
+    mpu.CalibrateAccel(6);
+    mpu.CalibrateGyro(6);
+    mpu.setDMPEnabled(true);
 
-  //TODO:remove
-  Serial.println("x accel after calibration");
-  Serial.println(mpu.getXAccelOffset());
+    attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), dmpDataReady, RISING);
+    mpu.getIntStatus();
+
+    dmpReady = true;
+    packetSize = mpu.dmpGetFIFOPacketSize();
+    Serial.println(F("DMP ready!"));
+  } else {
+    Serial.print(F("DMP Initialization failed (code "));
+    Serial.print(devStatus);
+    Serial.println(F(")"));
+    while (1);
+  }
 
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
@@ -343,11 +289,108 @@ void setup() {
   pinMode(FLASH_GPIO_NUM, OUTPUT);
   digitalWrite(FLASH_GPIO_NUM, LOW); // Initially off
 
-  // Start the camera server
-  startCameraServer();
+  // Start loop = the camera server
 }
 
 void loop() {
-  // Nothing to do here, the server handles everything
-  delay(1000);
+  float dxt=0, dyt=0, dzt=0, dx=0, dy=0, dz=0, vx=0, vy=0, vz=0, Gxt=0, Gyt=0, Gzt=0;
+  float ax, ay, az, qx, qy, qz, qw, x_rot, y_rot, z_rot;
+  float dt = 0.014f;  // 14 ms delay = 0.014 s
+  unsigned long lastTime, nowTime;
+
+  server.begin();
+  Serial.println("Camera server started");
+  lastTime = millis();
+
+  while (true) {
+    WiFiClient client = server.available(); // Listen for incoming clients
+    if (!client) {
+      Serial.println("New Client waiting");
+      
+      //crash if error
+      if (!dmpReady) return;
+
+      // Wait for new data
+      if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) {
+        mpu.dmpGetQuaternion(&q, fifoBuffer);
+        mpu.dmpGetAccel(&aa, fifoBuffer);
+        mpu.dmpGetGravity(&gravity, &q);
+        mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
+
+        // Manually rotate the acceleration to world frame
+        ax = aaReal.x;
+        ay = aaReal.y;
+        az = aaReal.z;
+
+        // Quaternion rotation to world frame
+        qx = q.x;
+        qy = q.y;
+        qz = q.z;
+        qw = q.w;
+
+        // Apply rotation to each axis
+        x_rot = (1 - 2 * (qy * qy + qz * qz)) * ax + 2 * (qx * qy - qw * qz) * ay + 2 * (qx * qz + qw * qy) * az;
+        y_rot = 2 * (qx * qy + qw * qz) * ax + (1 - 2 * (qx * qx + qz * qz)) * ay + 2 * (qy * qz - qw * qx) * az;
+        z_rot = 2 * (qx * qz - qw * qy) * ax + 2 * (qy * qz + qw * qx) * ay + (1 - 2 * (qx * qx + qy * qy)) * az;
+
+        // Convert to cm/s²
+        ax = x_rot * 981 / 16384.0;
+        ay = y_rot * 981 / 16384.0;
+        az = z_rot * 981 / 16384.0;
+
+        // Apply exponential moving average (EMA)
+        filteredAx = alpha * ax + (1 - alpha) * filteredAx;
+        filteredAy = alpha * ay + (1 - alpha) * filteredAy;
+        filteredAz = alpha * az + (1 - alpha) * filteredAz;
+
+        // Print in world-frame cm/s²
+        Serial.print("aworld_x_y_z_cm/m^2\t");
+        Serial.print(filteredAx);
+        Serial.print("\t");
+        Serial.print(filteredAy);
+        Serial.print("\t");
+        Serial.println(filteredAz);
+      }
+
+      // Integrate acceleration to update velocity
+      vx += filteredAx * dt;//(filteredAx > 1 || filteredAx < -1) ?  filteredAx * dt : 0;
+      vy += filteredAy * dt;//(filteredAy > 1 || filteredAy < -1) ?  filteredAy * dt : 0;
+      vz += filteredAz * dt;//(filteredAz > 1 || filteredAz < -1) ?  filteredAz * dt : 0;
+
+      // Integrate velocity to update displacement
+      dxt += vx * dt;
+      dyt += vy * dt;
+      dzt += vz * dt;
+
+      Gxt += mpu.getRotationX()/ 131.0;
+      Gyt += mpu.getRotationY()/ 131.0;
+      Gzt += mpu.getRotationZ()/ 131.0;
+
+      delay(10);
+      continue;
+    }
+
+    Serial.println("New Client Connected");
+
+    // Wait until the client sends a request
+    while (!client.available()) {
+      Serial.println("Waiting For Client Request.");
+      delay(10);
+    }
+    
+    String request = client.readStringUntil('\r');
+    client.flush(); // Clear the client buffer
+
+    if (request.indexOf("GET /capture") >= 0) {
+      Serial.println("Image and sensor data requested");
+      handleCaptureRequest(client, dxt, dyt, dzt, Gxt, Gyt, Gzt);
+      client.stop();
+      dxt=0; dyt=0; dzt=0; Gxt=0; Gyt=0; Gzt=0;
+      vx = vy = vz = 0;
+      continue;
+    }
+    dxt=0; dyt=0; dzt=0; Gxt=0; Gyt=0; Gzt=0;
+    vx = vy = vz = 0;
+    client.stop();
+  }
 }
