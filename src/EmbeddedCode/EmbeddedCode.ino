@@ -40,6 +40,7 @@ WiFiServer server(PORT_NUMBER); // Set up a web server on port 80
 camera_fb_t *fb;
 esp_err_t err;
 float Ax, Ay, Az, Gx, Gy, Gz;
+float XAccelOffset, YAccelOffset, ZAccelOffset, XGyroOffset, YGyroOffset, ZGyroOffset;
 uint16_t distance;
 
 void scanI2C() {
@@ -52,6 +53,39 @@ void scanI2C() {
     }
   }
   Serial.println("Finished scanning for I2C devices...");
+}
+
+void calibrateMPU() {
+  int16_t ax, ay, az, gx, gy, gz;
+  int32_t ax_offset = 0, ay_offset = 0, az_offset = 0;
+  int32_t gx_offset = 0, gy_offset = 0, gz_offset = 0;
+  const int samples = 1000;
+
+  for (int i = 0; i < samples; i++) {
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    Serial.print("Raw 6ax: "); Serial.println(ax);
+    ax_offset += ax;
+    ay_offset += ay;
+    az_offset += az - 16384; // subtract gravity from Z
+    gx_offset += gx;
+    gy_offset += gy;
+    gz_offset += gz;
+    delay(3); // small delay between samples
+  }
+  
+  ax_offset /= samples;
+  ay_offset /= samples;
+  az_offset /= samples;
+  gx_offset /= samples;
+  gy_offset /= samples;
+  gz_offset /= samples;
+
+  XAccelOffset = ax_offset;
+  YAccelOffset = ay_offset;
+  ZAccelOffset = az_offset-16384;//TODO: change when flipping device operation
+  XGyroOffset = gx_offset;
+  YGyroOffset = gy_offset;
+  ZGyroOffset = gz_offset;
 }
 
 void handleCaptureRequest(WiFiClient& client, float dxt, float dyt, float dzt, float Gxt, float Gyt, float Gzt) {
@@ -117,7 +151,7 @@ void handleCaptureRequest(WiFiClient& client, float dxt, float dyt, float dzt, f
 
 void startCameraServer() {
   float dxt=0, dyt=0, dzt=0, dx=0, dy=0, dz=0, vx=0, vy=0, vz=0, Gxt=0, Gyt=0, Gzt=0, passedTime=0, numSamples=0;
-  float dt = 0.02f;  // 20 ms delay = 0.02 s
+  float dt = 0.014f;  // 14 ms delay = 0.014 s
   float prevAx = 0, alpha = 0.5; // tune as needed
   unsigned long lastTime, nowTime;
 
@@ -130,9 +164,12 @@ void startCameraServer() {
     if (!client) {
       Serial.println("New Client waiting");
       // Read sensor values
-      Ax = (mpu.getAccelerationX()/ 16384.0f)* 980.665f; // in cm/s^2
-      Ax = alpha * Ax + (1 - alpha) * prevAx;
-      prevAx = Ax;
+      Ax = ((mpu.getAccelerationX() - XAccelOffset)/ 16384.0f)* 980.665f; // in cm/s^2
+
+      //TODO:remove
+      // Ax = alpha * Ax + (1 - alpha) * prevAx;
+      // prevAx = Ax;
+
       Ay = (mpu.getAccelerationY()/ 16384.0f)* 980.665f;
       Az = (mpu.getAccelerationZ()/ 16384.0f)* 980.665f;
       // Integrate acceleration to update velocity
@@ -149,13 +186,17 @@ void startCameraServer() {
       Gzt += mpu.getRotationZ()/ 131.0;
 
       //TODO: delete
-      Ax=mpu.getAccelerationX();
-      Gx=mpu.getRotationX();
-      Serial.print("Raw Ax: "); Serial.println((Ax/ 16384.0f));//(  Ax > 150 ? Ax : 0 );
-      Serial.print(" Raw Gx: "); Serial.println(Gx);
+      nowTime = micros();
+      passedTime = (nowTime - lastTime)/1000.0;
+      lastTime = micros();
+
+      Ax = (mpu.getAccelerationX() - XAccelOffset)/16384.0f* 980.665f;
+      Serial.print("Passed Time: "); Serial.println(passedTime);
+      Serial.print("Raw Ax: "); Serial.println(Ax);
+      
 
       numSamples++;
-      delay(20);
+      delay(10);
       continue;
     }
 
@@ -164,30 +205,33 @@ void startCameraServer() {
     // Wait until the client sends a request
     while (!client.available()) {
       Serial.println("Waiting For Client Request.");
-      // Read sensor values
-      Ax = (mpu.getAccelerationX()/ 16384.0f)* 980.665f; // in cm/s^2
-      Ax = alpha * Ax + (1 - alpha) * prevAx;
-      prevAx = Ax;
-      Ay = (mpu.getAccelerationY()/ 16384.0f)* 980.665f;
-      Az = (mpu.getAccelerationZ()/ 16384.0f)* 980.665f;
-      // Integrate acceleration to update velocity
-      vx += Ax * dt;
-      vy += Ay * dt;
-      vz += Az * dt;
-      // Integrate velocity to update displacement
-      dxt += vx * dt;
-      dyt += vy * dt;
-      dzt += vz * dt;
+      // // Read sensor values
+      // Ax = (mpu.getAccelerationX()/ 16384.0f)* 980.665f; // in cm/s^2
+      // Ax = alpha * Ax + (1 - alpha) * prevAx;
+      // prevAx = Ax;
+      // Ay = (mpu.getAccelerationY()/ 16384.0f)* 980.665f;
+      // Az = (mpu.getAccelerationZ()/ 16384.0f)* 980.665f;
+      // // Integrate acceleration to update velocity
+      // vx += Ax * dt;
+      // vy += Ay * dt;
+      // vz += Az * dt;
+      // // Integrate velocity to update displacement
+      // dxt += vx * dt;
+      // dyt += vy * dt;
+      // dzt += vz * dt;
 
-      Gxt += mpu.getRotationX()/ 131.0;
-      Gyt += mpu.getRotationY()/ 131.0;
-      Gzt += mpu.getRotationZ()/ 131.0;
-      numSamples++;
+      // Gxt += mpu.getRotationX()/ 131.0;
+      // Gyt += mpu.getRotationY()/ 131.0;
+      // Gzt += mpu.getRotationZ()/ 131.0;
+      // numSamples++;
       delay(10);
     }
-    nowTime = millis();
-    passedTime = (nowTime - lastTime)/1000.0;
-    lastTime = millis();
+
+    //TODO:remove
+    // nowTime = millis();
+    // passedTime = (nowTime - lastTime)/1000.0;
+    // lastTime = millis();
+    
     String request = client.readStringUntil('\r');
     client.flush(); // Clear the client buffer
 
@@ -238,6 +282,19 @@ void setup() {
   lox.setTimeout(5000);
   lox.startContinuous();
   Serial.println("VL53L0X configured.");
+
+  //TODO:remove
+  Serial.println("x accel before calibration");
+  Serial.println(mpu.getXAccelOffset());
+
+  //calibrate MPU
+  Serial.println("MPU Calibration Start.");
+  calibrateMPU();
+  Serial.println("MPU Calibration Done.");
+
+  //TODO:remove
+  Serial.println("x accel after calibration");
+  Serial.println(mpu.getXAccelOffset());
 
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
