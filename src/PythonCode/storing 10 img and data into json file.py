@@ -68,8 +68,8 @@ def get_sensor_data_and_image(iteration):
         print(f"An error occurred: {e}")
 
 # Run the function 10 times and save the results in files
-for i in range(1, 11):
+for i in range(1, 26):
     print(f"\n--- Iteration {i} ---")
     get_sensor_data_and_image(i)
-    time.sleep(2)
+    time.sleep(1)
     print(f"Iteration {i} complete.\n")
