@@ -4,6 +4,8 @@ from io import BytesIO
 from PIL import Image
 import os
 import time
+import cv2
+import numpy as np
 
 # The IP address of the ESP32 (replace with your actual ESP32 IP address)
 esp32_ip = "http://172.20.10.3/capture"
@@ -57,6 +59,13 @@ def get_sensor_data_and_image(iteration):
                 
                 # Save the image to a file
                 image_file_path = os.path.join(output_dir, f"captured_{iteration}.jpg")
+
+                # # crop middle
+                # image_np = np.array(image)
+                # h, w = image_np.shape[:2]
+                # crop = image_np[h//5:4*h//5, w//5:4*w//5]
+                # crop_image = Image.fromarray(crop)
+
                 image.save(image_file_path)
                 print(f"Image saved as '{image_file_path}'")
             else:
@@ -67,9 +76,52 @@ def get_sensor_data_and_image(iteration):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-# Run the function 10 times and save the results in files
-for i in range(1, 26):
+# Run the function 8 times and save the results in files
+for i in range(1, 13):
     print(f"\n--- Iteration {i} ---")
     get_sensor_data_and_image(i)
     time.sleep(1)
     print(f"Iteration {i} complete.\n")
+
+##########################################
+##########################################
+
+# take images into a list, delete first unstable 3, leave 2
+images = [cv2.imread(f"captured_data/captured_{i}.jpg") for i in range(4, 13)]
+
+
+# Define the target A4 size at 300 DPI (3508x2480 pixels)
+a4_width = 3508
+a4_height = 2480
+
+# Create a Stitcher object (for stitching the images)
+stitcher = cv2.Stitcher_create()  
+
+# Perform the stitching
+status, stitched = stitcher.stitch(images)
+
+# Check if stitching was successful
+if status == cv2.Stitcher_OK:
+    print("Stitching successful!")
+
+    # # Get the dimensions of the stitched result
+    # stitched_height, stitched_width = stitched.shape[:2]
+
+    # # Ensure the stitched image fits within the A4 dimensions
+    # if stitched_width > a4_width or stitched_height > a4_height:
+    #     print("Stitched image is too large. Resizing to A4.")
+        
+    #     # Resize the stitched image to fit within A4 size (3508x2480)
+    #     stitched_resized = cv2.resize(stitched, (a4_width, a4_height))
+    # else:
+    #     stitched_resized = stitched  # No resizing needed if already A4
+    stitched_resized = stitched 
+    # Show and save the final result
+    cv2.imshow("Stitched A4 Image", stitched_resized)
+    cv2.imwrite("stitched_result_A4.jpg", stitched_resized)
+
+else:
+    print("Error during stitching. Status code:", status)
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
