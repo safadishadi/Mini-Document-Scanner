@@ -373,12 +373,14 @@ void loop() {
         filteredAz = alpha * az + (1 - alpha) * filteredAz;
 
         // Print in world-frame cm/s²
-        Serial.print("aworld_x_y_z_cm/m^2\t");
+        Serial.print("aworld_x_y_z_cm/m^2 dist cm\t");
         Serial.print(filteredAx);
         Serial.print("\t");
         Serial.print(filteredAy);
         Serial.print("\t");
-        Serial.println(filteredAz);
+        Serial.print(filteredAz);
+        Serial.print("\t");
+        Serial.println(lox.readRangeSingleMillimeters()/10);
       }
 
       // Integrate acceleration to update velocity

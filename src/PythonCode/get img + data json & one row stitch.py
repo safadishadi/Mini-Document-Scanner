@@ -24,12 +24,10 @@ def get_sensor_data_and_image(iteration):
         if response.status_code == 200:
             # Initialize variables
             boundary = b'--frame'
-            content_type = response.headers.get('Content-Type', '')
             parts = response.content.split(boundary)
             
             # Search for the JSON part
-            json_part = None
-            image_part = None
+            json_part, image_part = None, None
 
             # Loop through each part of the response
             for part in parts:
@@ -42,55 +40,71 @@ def get_sensor_data_and_image(iteration):
             if json_part:
                 json_data = json_part.split(b'\r\n\r\n')[-1].decode('utf-8')  # Get JSON content after the header
                 sensor_data = json.loads(json_data)
-                print(f"Sensor Data (iteration {iteration}):", sensor_data)
-                
-                # Save sensor data to a file
-                sensor_file_path = os.path.join(output_dir, f"sensor_data_{iteration}.json")
-                with open(sensor_file_path, 'w') as json_file:
-                    json.dump(sensor_data, json_file, indent=4)
-                print(f"Sensor data saved as '{sensor_file_path}'")
+                distance_cm = sensor_data.get("distance_cm", 999)
+                return distance_cm, sensor_data, image_part
             else:
-                print("No sensor data found in the response.")
-
-            # Process the Image part
-            if image_part:
-                image_data = image_part.split(b'\r\n\r\n')[-1]  # Get image content after the header
-                image = Image.open(BytesIO(image_data))
-                
-                # Save the image to a file
-                image_file_path = os.path.join(output_dir, f"captured_{iteration}.jpg")
-
-                # # crop middle
-                # image_np = np.array(image)
-                # h, w = image_np.shape[:2]
-                # crop = image_np[h//5:4*h//5, w//5:4*w//5]
-                # crop_image = Image.fromarray(crop)
-
-                image.save(image_file_path)
-                print(f"Image saved as '{image_file_path}'")
-            else:
-                print("No image found in the response.")
+                print("No sensor data found.")
+                return None, None, None
         else:
-            print(f"Failed to get response from ESP32. Status code: {response.status_code}")
-    
+            print(f"Failed to get response from ESP32. Status: {response.status_code}")
+            return None, None, None
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Error: {e}")
+        return None, None, None
 
-# Run the function 8 times and save the results in files
-for i in range(1, 13):
-    print(f"\n--- Iteration {i} ---")
-    get_sensor_data_and_image(i)
-    time.sleep(1)
-    print(f"Iteration {i} complete.\n")
+# Wait until object gets close
+print("Waiting for object to come closer (< 60 cm)...")
+capturing = False
+image_count = 0
+max_images = 20  # safety limit
 
-##########################################
-##########################################
+while True:
+    distance_cm, sensor_data, image_part = get_sensor_data_and_image(image_count + 1)
+    if distance_cm is None:
+        time.sleep(0.1)
+        continue
 
-# take images into a list, delete first unstable 3, leave 2
-images = [cv2.imread(f"captured_data/captured_{i}.jpg") for i in range(4, 13)]
+    print(f"Distance: {distance_cm:.1f} cm")
 
+    if not capturing:
+        if distance_cm < 60:
+            print("Object detected! Starting capture...")
+            capturing = True
+        else:
+            time.sleep(0.2)
+            continue
 
-# Define the target A4 size at 300 DPI (3508x2480 pixels)
+    # If currently capturing and object is still close, save image
+    if capturing and distance_cm < 60:
+        image_count += 1
+
+        # Save sensor data
+        with open(f"{output_dir}/sensor_data_{image_count}.json", 'w') as f:
+            json.dump(sensor_data, f, indent=4)
+
+        # Save image
+        image_data = image_part.split(b'\r\n\r\n')[-1]
+        image = Image.open(BytesIO(image_data))
+        image_path = os.path.join(output_dir, f"captured_{image_count}.jpg")
+        image.save(image_path)
+        print(f"Saved image #{image_count} at distance {distance_cm:.1f} cm")
+        print(f"X_Y_Z displacements in cm:  #{image_count} #{image_count} #{image_count}")
+
+        if image_count >= max_images:
+            print("Max image count reached.")
+            break
+
+        time.sleep(0.5)
+
+    # Stop capturing if object has moved away
+    elif capturing and distance_cm >= 60:
+        print("Object moved away. Ending capture.")
+        break
+
+# Stitching captured images
+print("\n--- Stitching ---")
+images = [cv2.imread(os.path.join(output_dir, f"captured_{i}.jpg")) for i in range(1, image_count + 1)]
+
 a4_width = 3508
 a4_height = 2480
 
@@ -103,24 +117,25 @@ status, stitched = stitcher.stitch(images)
 # Check if stitching was successful
 if status == cv2.Stitcher_OK:
     print("Stitching successful!")
-
-    # # Get the dimensions of the stitched result
-    # stitched_height, stitched_width = stitched.shape[:2]
-
-    # # Ensure the stitched image fits within the A4 dimensions
-    # if stitched_width > a4_width or stitched_height > a4_height:
-    #     print("Stitched image is too large. Resizing to A4.")
-        
-    #     # Resize the stitched image to fit within A4 size (3508x2480)
-    #     stitched_resized = cv2.resize(stitched, (a4_width, a4_height))
-    # else:
-    #     stitched_resized = stitched  # No resizing needed if already A4
     stitched_resized = stitched 
     # Show and save the final result
     cv2.imshow("Stitched A4 Image", stitched_resized)
-    cv2.imwrite("stitched_result_A4.jpg", stitched_resized)
+    cv2.imwrite("stitched_result_rone_row.jpg", stitched_resized)
+
+    # Delete captured images after stitching
+    for i in range(1, image_count + 1):
+        img_path = os.path.join(output_dir, f"captured_{i}.jpg")
+        if os.path.exists(img_path):
+            os.remove(img_path)
+    print("Captured images deleted after stitching.")
 
 else:
+    # Delete captured images after stitching
+    for i in range(1, image_count + 1):
+        img_path = os.path.join(output_dir, f"captured_{i}.jpg")
+        if os.path.exists(img_path):
+            os.remove(img_path)
+    print("Captured images deleted after stitching.")
     print("Error during stitching. Status code:", status)
 
 cv2.waitKey(0)
