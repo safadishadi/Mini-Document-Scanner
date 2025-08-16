@@ -24,6 +24,21 @@ This project is is a software and hardware implementation of a miniature sized d
 - Typing 172.20.10.3 in browser to see captured images
 - Running 1 of 2 python files to either test connection or capture 10 images
 
+**Project Map:**
+```
+├── src/
+│   ├── EmbeddedCode/
+│      ├── EmbeddedCode.ino
+│      └── TODO
+│   └── PythonCode/
+│      ├── TODO
+│      └── TODO
+├── tests/
+│   ├── TODO
+│   └── TODO
+└── README.md
+```
+
 **Authors:**
 
 Hani Sabihi
