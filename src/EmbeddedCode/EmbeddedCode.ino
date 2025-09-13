@@ -363,9 +363,9 @@ void loop() {
         z_rot = 2 * (qx * qz - qw * qy) * ax + 2 * (qy * qz + qw * qx) * ay + (1 - 2 * (qx * qx + qy * qy)) * az;
 
         // Convert to cm/s²
-        ax = x_rot * 981 / 16384.0;
-        ay = y_rot * 981 / 16384.0;
-        az = z_rot * 981 / 16384.0;
+        ax = x_rot * (9810 / 16384.0f);
+        ay = y_rot * (9810 / 16384.0f);
+        az = z_rot * (9810 / 16384.0f);
 
         // Apply exponential moving average (EMA)
         filteredAx = alpha * ax + (1 - alpha) * filteredAx;
@@ -373,14 +373,15 @@ void loop() {
         filteredAz = alpha * az + (1 - alpha) * filteredAz;
 
         // Print in world-frame cm/s²
-        Serial.print("aworld_x_y_z_cm/m^2 dist cm\t");
+        Serial.print("aworld_x_y_z_cm/s^2 dist cm\t");
         Serial.print(filteredAx);
         Serial.print("\t");
         Serial.print(filteredAy);
         Serial.print("\t");
         Serial.print(filteredAz);
         Serial.print("\t");
-        Serial.println(lox.readRangeSingleMillimeters()/10);
+        Serial.print(lox.readRangeSingleMillimeters()/10);
+        Serial.print("\t");
       }
 
       // Integrate acceleration to update velocity
@@ -393,9 +394,13 @@ void loop() {
       dyt += vy * dt;
       dzt += vz * dt;
 
-      Gxt += mpu.getRotationX()/ 131.0;
-      Gyt += mpu.getRotationY()/ 131.0;
-      Gzt += mpu.getRotationZ()/ 131.0;
+      Serial.print("dzt_cm\t");
+      Serial.print(dzt);
+      Serial.print("\t");
+
+      Gxt += mpu.getRotationX()/ 131.0f;
+      Gyt += mpu.getRotationY()/ 131.0f;
+      Gzt += mpu.getRotationZ()/ 131.0f;
 
       delay(10);
       continue;

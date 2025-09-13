@@ -41,8 +41,8 @@ def get_sensor_data_and_image():
                 json_data = json_part.split(b'\r\n\r\n')[-1].decode('utf-8')  # Get JSON content after the header
                 sensor_data = json.loads(json_data)
                 distance_cm = sensor_data.get("distance_cm", 999)
-                displacement_y = sensor_data.get("displacement_cm_y", 0)
-                return distance_cm, displacement_y, sensor_data, image_part
+                displacement_z = sensor_data.get("displacement_cm_z", 0)
+                return distance_cm, displacement_z, sensor_data, image_part
             else:
                 print("No sensor data found.")
                 return None, None, None, None
@@ -64,22 +64,22 @@ capturing = False
 current_row = 0
 image_count = 0
 row_image_paths = []
-prev_displacement_y = 0
+prev_displacement_z = 0
 
 while True:
-    distance_cm, displacement_y, sensor_data, image_part = get_sensor_data_and_image()
+    distance_cm, displacement_z, sensor_data, image_part = get_sensor_data_and_image()
     if distance_cm is None:
         time.sleep(0.1)
         continue
 
-    print(f"Distance: {distance_cm:.1f} cm, Displacement Y: {displacement_y:.1f} cm")
+    print(f"Distance: {distance_cm:.1f} cm, Displacement Z:                                {displacement_z:.1f} cm")
 
     if not capturing:
         if distance_cm < 60:
             print("Object detected! Starting capture...")
             capturing = True
         else:
-            time.sleep(0.2)
+            time.sleep(1.3)
             continue
 
     if capturing:
@@ -101,8 +101,22 @@ while True:
             print(f"Saved image #{image_count} in row {current_row} at distance {distance_cm:.1f} cm")
 
             # Check for new row start
-            if displacement_y > 17:
-                print(f"New row detected (Y displacement {displacement_y:.1f} cm). Moving to next row...")
+            if displacement_z < 0:
+                print(f"New row detected (Z displacement {displacement_z:.1f} cm). Moving to next row...")
+
+                # Discard first image of the first row
+                if current_row == 0 and len(row_image_paths) > 0:
+                    discarded_image = row_image_paths.pop(0)
+                    # Optionally delete the file if you already saved it
+                    if os.path.exists(discarded_image):
+                        os.remove(discarded_image)
+                    # Also remove corresponding JSON
+                    sensor_discarded = discarded_image.replace("captured_row", "sensor_data_row").replace(".jpg", ".json")
+                    if os.path.exists(sensor_discarded):
+                        os.remove(sensor_discarded)
+                    print(f"Discarded first image of first row: {discarded_image}")
+
+                #append finished row to the row array
                 row_images.append(row_image_paths)
                 row_image_paths = []
                 current_row += 1
@@ -112,7 +126,7 @@ while True:
                     print("Max row count reached.")
                     break
 
-            time.sleep(0.5)
+            time.sleep(1.3)
         else:
             # Object moved away, stop if already captured something
             if row_image_paths:
@@ -133,21 +147,42 @@ for row_idx, paths in enumerate(row_images):
         stitched_rows.append(stitched)
         cv2.imwrite(os.path.join(output_dir, f"stitched_row_{row_idx}.jpg"), stitched)
 
-        # Delete captured images after stitching
-        for i in range(1, image_count + 1):
-            img_path = os.path.join(output_dir, f"captured_{i}.jpg")
-            if os.path.exists(img_path):
-                os.remove(img_path)
+        # Delete captured images + json after stitching
+        for p in paths:
+            if os.path.exists(p):
+                os.remove(p)
+            sensor_p = p.replace("captured_row", "sensor_data_row").replace(".jpg", ".json")
+            if os.path.exists(sensor_p):
+                os.remove(sensor_p)
         print("Captured images deleted after stitching.")
         
     else:
+        # Delete captured images + json after stitching
+        for p in paths:
+            if os.path.exists(p):
+                os.remove(p)
+            sensor_p = p.replace("captured_row", "sensor_data_row").replace(".jpg", ".json")
+            if os.path.exists(sensor_p):
+                os.remove(sensor_p)
         print(f"Error stitching row {row_idx}. Status: {status}")
+        print("Captured images deleted after error.")
 
-# Combine stitched rows vertically into a final A4 layout
+# Combine stitched rows vertically into a full scan
 if stitched_rows:
-    final = cv2.vconcat(stitched_rows)
-    cv2.imshow("Final A4 Image", final)
-    cv2.imwrite("stitched_result_A4.jpg", final)
+    # Rotate each row 90° counterclockwise
+    rotated_rows = [cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE) for img in stitched_rows]
+
+    # Stitch the rotated rows (horizontal panorama now represents vertical overlap)
+    stitcher = cv2.Stitcher_create()
+    status, stitched_rotated = stitcher.stitch(rotated_rows)
+
+    if status == cv2.Stitcher_OK:
+        # Rotate back 90° clockwise
+        full_scan = cv2.rotate(stitched_rotated, cv2.ROTATE_90_CLOCKWISE)
+        cv2.imwrite("stitched_result_A4.jpg", full_scan)
+        print("Full scan stitched successfully.")
+    else:
+        print(f"Error stitching rows vertically. Status: {status}")
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
