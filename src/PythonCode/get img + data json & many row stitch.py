@@ -41,8 +41,8 @@ def get_sensor_data_and_image():
                 json_data = json_part.split(b'\r\n\r\n')[-1].decode('utf-8')  # Get JSON content after the header
                 sensor_data = json.loads(json_data)
                 distance_cm = sensor_data.get("distance_cm", 999)
-                displacement_z = sensor_data.get("displacement_cm_z", 0)
-                return distance_cm, displacement_z, sensor_data, image_part
+                displacement_y = sensor_data.get("displacement_cm_y", 0)
+                return distance_cm, displacement_y, sensor_data, image_part
             else:
                 print("No sensor data found.")
                 return None, None, None, None
@@ -64,15 +64,15 @@ capturing = False
 current_row = 0
 image_count = 0
 row_image_paths = []
-prev_displacement_z = 0
+prev_displacement_y = 0
 
 while True:
-    distance_cm, displacement_z, sensor_data, image_part = get_sensor_data_and_image()
+    distance_cm, displacement_y, sensor_data, image_part = get_sensor_data_and_image()
     if distance_cm is None:
         time.sleep(0.1)
         continue
 
-    print(f"Distance: {distance_cm:.1f} cm, Displacement Z:                                {displacement_z:.1f} cm")
+    print(f"Distance: {distance_cm:.1f} cm, Displacement Y:                                {displacement_y:.1f} cm")
 
     if not capturing:
         if distance_cm < 60:
@@ -101,8 +101,8 @@ while True:
             print(f"Saved image #{image_count} in row {current_row} at distance {distance_cm:.1f} cm")
 
             # Check for new row start
-            if displacement_z < 0:
-                print(f"New row detected (Z displacement {displacement_z:.1f} cm). Moving to next row...")
+            if displacement_y > 10:
+                print(f"New row detected (Y displacement {displacement_y:.1f} cm). Moving to next row...")
 
                 # Discard first image of the first row
                 if current_row == 0 and len(row_image_paths) > 0:
@@ -179,6 +179,8 @@ if stitched_rows:
     if status == cv2.Stitcher_OK:
         # Rotate back 90° clockwise
         full_scan = cv2.rotate(stitched_rotated, cv2.ROTATE_90_CLOCKWISE)
+        # TODO: crop the image with the biggest rectangle
+        # TODO: crop the exact documentanddelete surroundings
         cv2.imwrite("stitched_result_A4.jpg", full_scan)
         print("Full scan stitched successfully.")
     else:

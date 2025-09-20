@@ -6,6 +6,7 @@
 #include <VL53L0X.h>
 #include "I2Cdev.h"
 
+#include <math.h> //added
 
 
 #define PWDN_GPIO_NUM     32
@@ -60,7 +61,7 @@ VectorFloat gravity;
 
 // Filtered output
 float filteredAx = 0, filteredAy = 0, filteredAz = 0;
-const float alpha = 0.2; // Smoothing factor: lower = smoother (try 0.05–0.2)
+const float alpha = 0.8; // Smoothing factor: 0-1.
 
 // Interrupt flag
 volatile bool mpuInterrupt = false;
@@ -207,6 +208,7 @@ void setup() {
   lox.setTimeout(5000);
   lox.startContinuous();
   Serial.println("VL53L0X configured.");
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
 
   Serial.println(F("Initializing DMP..."));
   devStatus = mpu.dmpInitialize();
@@ -324,12 +326,13 @@ void setup() {
 void loop() {
   float dxt=0, dyt=0, dzt=0, dx=0, dy=0, dz=0, vx=0, vy=0, vz=0, Gxt=0, Gyt=0, Gzt=0;
   float ax, ay, az, qx, qy, qz, qw, x_rot, y_rot, z_rot;
-  float dt = 0.014f;  // 14 ms delay = 0.014 s
-  unsigned long lastTime, nowTime;
+  float dt = 0.060f;  // 60 ms delay = 0.060 s
+  // unsigned long lastTime, nowTime;
+  static unsigned long lastMicros = micros();  // first run only
 
   server.begin();
   Serial.println("Camera server started");
-  lastTime = millis();
+  //lastTime = millis();
 
   while (true) {
     WiFiClient client = server.available(); // Listen for incoming clients
@@ -346,31 +349,59 @@ void loop() {
         mpu.dmpGetGravity(&gravity, &q);
         mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
 
+        // Print in aaReal data
+        Serial.print("aaReal_x_y_z\t");
+        Serial.print(aaReal.x*(981/16384.0f));
+        Serial.print("\t");
+        Serial.print(aaReal.y*(981/16384.0f));
+        Serial.print("\t");
+        Serial.print(aaReal.z*(981/16384.0f));
+        Serial.print("\t");
+
         // Manually rotate the acceleration to world frame
         ax = aaReal.x;
         ay = aaReal.y;
         az = aaReal.z;
 
-        // Quaternion rotation to world frame
-        qx = q.x;
-        qy = q.y;
-        qz = q.z;
-        qw = q.w;
+        // // Quaternion rotation to world frame
+        // qx = q.x;
+        // qy = q.y;
+        // qz = q.z;
+        // qw = q.w;
 
-        // Apply rotation to each axis
-        x_rot = (1 - 2 * (qy * qy + qz * qz)) * ax + 2 * (qx * qy - qw * qz) * ay + 2 * (qx * qz + qw * qy) * az;
-        y_rot = 2 * (qx * qy + qw * qz) * ax + (1 - 2 * (qx * qx + qz * qz)) * ay + 2 * (qy * qz - qw * qx) * az;
-        z_rot = 2 * (qx * qz - qw * qy) * ax + 2 * (qy * qz + qw * qx) * ay + (1 - 2 * (qx * qx + qy * qy)) * az;
+        // // Apply rotation to each axis
+        // x_rot = (1 - 2 * (qy * qy + qz * qz)) * ax + 2 * (qx * qy - qw * qz) * ay + 2 * (qx * qz + qw * qy) * az;
+        // y_rot = 2 * (qx * qy + qw * qz) * ax + (1 - 2 * (qx * qx + qz * qz)) * ay + 2 * (qy * qz - qw * qx) * az;
+        // z_rot = 2 * (qx * qz - qw * qy) * ax + 2 * (qy * qz + qw * qx) * ay + (1 - 2 * (qx * qx + qy * qy)) * az;
 
         // Convert to cm/s²
-        ax = x_rot * (9810 / 16384.0f);
-        ay = y_rot * (9810 / 16384.0f);
-        az = z_rot * (9810 / 16384.0f);
+        ax = ax * (981 / 16384.0f);
+        ay = ay * (981 / 16384.0f);
+        az = az * (981 / 16384.0f);
 
         // Apply exponential moving average (EMA)
         filteredAx = alpha * ax + (1 - alpha) * filteredAx;
         filteredAy = alpha * ay + (1 - alpha) * filteredAy;
         filteredAz = alpha * az + (1 - alpha) * filteredAz;
+
+        if (abs(filteredAx)<20) filteredAx=0;
+        if (abs(filteredAy)<20) filteredAy=0;
+        if (abs(filteredAz)<20) filteredAz=0;
+
+        if (filteredAx> filteredAy && filteredAx> filteredAz){
+            filteredAy=0;
+            filteredAz=0;
+        }
+        
+        if (filteredAy> filteredAx && filteredAy> filteredAz){
+            filteredAx=0;
+            filteredAz=0;
+        }
+        
+        if (filteredAz> filteredAx && filteredAz> filteredAy){
+            filteredAx=0;
+            filteredAy=0;
+        }
 
         // Print in world-frame cm/s²
         Serial.print("aworld_x_y_z_cm/s^2 dist cm\t");
@@ -383,6 +414,12 @@ void loop() {
         Serial.print(lox.readRangeSingleMillimeters()/10);
         Serial.print("\t");
       }
+
+      unsigned long nowMicros = micros();
+      unsigned long dt_us = nowMicros - lastMicros;  // dt in microseconds
+      lastMicros = nowMicros;
+      Serial.print("dt (us): ");
+      Serial.print(dt_us);
 
       // Integrate acceleration to update velocity
       vx += filteredAx * dt;//(filteredAx > 1 || filteredAx < -1) ?  filteredAx * dt : 0;
