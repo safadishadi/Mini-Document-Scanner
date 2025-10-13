@@ -24,7 +24,7 @@ This project is is a software and hardware implementation of a miniature sized d
 - Typing 172.20.10.3 in browser to see captured images
 - Running Python code that startscapturing images and stitching themin rows, andthen stitching the rows into a full scan:
 
-  * start by placing the board on a level plane, withits buttom rotated towards the upstanding document.
+  * start by placing the board on a level plane.
   * restart circuit to activate DMP calibration.
   * after calibration is done, lift board to face document with a distance greater than 60cm.
   * wait until z displacement measurment stabilizes as a positive number.
