@@ -14,6 +14,15 @@ esp32_ip = "http://172.20.10.3/capture"
 output_dir = "captured_data"
 os.makedirs(output_dir, exist_ok=True)
 
+def crop_sides(img, frac=0.05):
+    """
+    Crops a fixed fraction from all sides of the image.
+    Default is 5% (0.05) on each edge.
+    """
+    h, w = img.shape[:2]
+    dy, dx = int(h * frac), int(w * frac)
+    return img[dy:h - dy, dx:w - dx]
+
 # Function to make a request to ESP32 and process the response
 def get_sensor_data_and_image():
     try:
@@ -94,14 +103,14 @@ while True:
             # Save image
             image_data = image_part.split(b'\r\n\r\n')[-1]
             image = Image.open(BytesIO(image_data))
-            image_path = os.path.join(output_dir, f"captured_row{current_row}_img{image_count}.jpg")
-            image.save(image_path)
+            image_path = os.path.join(output_dir, f"captured_row{current_row}_img{image_count}.tiff")
+            image.save(image_path, format='TIFF', compression='none')  # Save as lossless TIFF
             row_image_paths.append(image_path)
 
             print(f"Saved image #{image_count} in row {current_row} at distance {distance_cm:.1f} cm")
 
             # Check for new row start
-            if displacement_y > 10:
+            if displacement_y > 7:
                 print(f"New row detected (Y displacement {displacement_y:.1f} cm). Moving to next row...")
 
                 # Discard first image of the first row
@@ -111,7 +120,7 @@ while True:
                     if os.path.exists(discarded_image):
                         os.remove(discarded_image)
                     # Also remove corresponding JSON
-                    sensor_discarded = discarded_image.replace("captured_row", "sensor_data_row").replace(".jpg", ".json")
+                    sensor_discarded = discarded_image.replace("captured_row", "sensor_data_row").replace(".tiff", ".json")
                     if os.path.exists(sensor_discarded):
                         os.remove(sensor_discarded)
                     print(f"Discarded first image of first row: {discarded_image}")
@@ -145,13 +154,13 @@ for row_idx, paths in enumerate(row_images):
     if status == cv2.Stitcher_OK:
         print(f"Row {row_idx} stitched successfully.")
         stitched_rows.append(stitched)
-        cv2.imwrite(os.path.join(output_dir, f"stitched_row_{row_idx}.jpg"), stitched)
+        cv2.imwrite(os.path.join(output_dir, f"stitched_row_{row_idx}.tiff"), stitched)
 
         # Delete captured images + json after stitching
         for p in paths:
             if os.path.exists(p):
                 os.remove(p)
-            sensor_p = p.replace("captured_row", "sensor_data_row").replace(".jpg", ".json")
+            sensor_p = p.replace("captured_row", "sensor_data_row").replace(".tiff", ".json")
             if os.path.exists(sensor_p):
                 os.remove(sensor_p)
         print("Captured images deleted after stitching.")
@@ -161,7 +170,7 @@ for row_idx, paths in enumerate(row_images):
         for p in paths:
             if os.path.exists(p):
                 os.remove(p)
-            sensor_p = p.replace("captured_row", "sensor_data_row").replace(".jpg", ".json")
+            sensor_p = p.replace("captured_row", "sensor_data_row").replace(".tiff", ".json")
             if os.path.exists(sensor_p):
                 os.remove(sensor_p)
         print(f"Error stitching row {row_idx}. Status: {status}")
@@ -169,6 +178,7 @@ for row_idx, paths in enumerate(row_images):
 
 # Combine stitched rows vertically into a full scan
 if stitched_rows:
+    # --- regular stitching ---
     # Rotate each row 90° counterclockwise
     rotated_rows = [cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE) for img in stitched_rows]
 
@@ -181,10 +191,44 @@ if stitched_rows:
         full_scan = cv2.rotate(stitched_rotated, cv2.ROTATE_90_CLOCKWISE)
         # TODO: crop the image with the biggest rectangle
         # TODO: crop the exact documentanddelete surroundings
-        cv2.imwrite("stitched_result_A4.jpg", full_scan)
+        cv2.imwrite("stitched_result_A4.tiff", full_scan)
         print("Full scan stitched successfully.")
     else:
         print(f"Error stitching rows vertically. Status: {status}")
+    # --- regular stitching end---
+    
+    # --- cumulative stitching ---
+    full_pano = rotated_rows[0]  # start with first row
+
+    for i in range(1, len(rotated_rows)):
+        stitcher = cv2.Stitcher_create()  # default mode
+        status, full_pano_new = stitcher.stitch([crop_sides(full_pano), crop_sides(rotated_rows[i])])
+        if status == cv2.Stitcher_OK:
+            full_pano = full_pano_new
+            print(f"Row {i} stitched successfully.")
+            cv2.imwrite(f"partial_stitch_{i}.tiff", full_pano)
+        else:
+            print(f"Warning: Stitcher failed at row {i}, keeping previous panorama.")
+    # Rotate back 90° CW
+    full_scan2 = cv2.rotate(full_pano, cv2.ROTATE_90_CLOCKWISE)
+    # Save TIFF
+    cv2.imwrite("stitched_result_cumulative_A4.tiff", full_scan2)
+    # --- cumulative stitching end ---
+
+    # --- cropped stitching ---
+    cropped_rotated_rows = [crop_sides(row)for row in rotated_rows]
+    status, cropped_stitched_rotated = stitcher.stitch(cropped_rotated_rows)
+    if status == cv2.Stitcher_OK:
+        # Rotate back 90° clockwise
+        full_scan3 = cv2.rotate(cropped_stitched_rotated, cv2.ROTATE_90_CLOCKWISE)
+        # TODO: crop the image with the biggest rectangle
+        # TODO: crop the exact documentanddelete surroundings
+        cv2.imwrite("stitched_result_cropped_A4.tiff", full_scan3)
+        print("Full scan stitched successfully.")
+    else:
+        print(f"Error stitching rows vertically. Status: {status}")
+    # --- cropped stitching end ---
+    
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
