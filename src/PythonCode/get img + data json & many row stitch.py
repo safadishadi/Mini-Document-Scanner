@@ -63,7 +63,7 @@ def get_sensor_data_and_image():
         return None, None, None, None
 
 # Parameters
-max_rows = 5
+max_rows = 10
 max_images_per_row = 20  # safety limit per row
 row_images = []
 all_stitched_rows = []
@@ -84,7 +84,7 @@ while True:
     print(f"Distance: {distance_cm:.1f} cm, Displacement Y:                                {displacement_y:.1f} cm")
 
     if not capturing:
-        if distance_cm < 60:
+        if distance_cm < 70:
             print("Object detected! Starting capture...")
             capturing = True
         else:
