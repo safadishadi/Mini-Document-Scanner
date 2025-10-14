@@ -6,6 +6,7 @@ import os
 import time
 import cv2
 import numpy as np
+MAX_DISTANCE = 60
 
 # The IP address of the ESP32 (replace with your actual ESP32 IP address)
 esp32_ip = "http://172.20.10.3/capture"
@@ -22,6 +23,40 @@ def crop_sides(img, frac=0.05):
     h, w = img.shape[:2]
     dy, dx = int(h * frac), int(w * frac)
     return img[dy:h - dy, dx:w - dx]
+
+def crop_to_strict_nonblack_rectangle(img, threshold=30, black_ratio_limit=0.35):
+    """
+    Crops aggressively to remove all black edges, even uneven ones.
+    Allows up to black_ratio_limit fraction of dark pixels per row/column.
+    Ensures final crop rectangle contains no visible black borders.
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+
+    h, w = mask.shape
+
+    # Compute fraction of black pixels per row and column
+    row_black_ratio = np.mean(mask == 0, axis=1)
+    col_black_ratio = np.mean(mask == 0, axis=0)
+
+    # Find first/last rows and cols that are mostly white (few black pixels)
+    top = next((i for i in range(h) if row_black_ratio[i] < black_ratio_limit), 0)
+    bottom = next((i for i in range(h-1, -1, -1) if row_black_ratio[i] < black_ratio_limit), h-1)
+    left = next((i for i in range(w) if col_black_ratio[i] < black_ratio_limit), 0)
+    right = next((i for i in range(w-1, -1, -1) if col_black_ratio[i] < black_ratio_limit), w-1)
+
+    # Ensure valid crop box
+    top = max(top, 0)
+    left = max(left, 0)
+    bottom = min(bottom, h - 1)
+    right = min(right, w - 1)
+
+    if right <= left or bottom <= top:
+        print("⚠️ No valid crop region found, skipping.")
+        return img
+
+    cropped = img[top:bottom, left:right]
+    return cropped
 
 # Function to make a request to ESP32 and process the response
 def get_sensor_data_and_image():
@@ -68,7 +103,7 @@ max_images_per_row = 20  # safety limit per row
 row_images = []
 all_stitched_rows = []
 
-print("Waiting for object to come closer (< 60 cm)...")
+print(f"Waiting for object to come closer (< {MAX_DISTANCE} cm)...")
 capturing = False
 current_row = 0
 image_count = 0
@@ -84,7 +119,7 @@ while True:
     print(f"Distance: {distance_cm:.1f} cm, Displacement Y:                                {displacement_y:.1f} cm")
 
     if not capturing:
-        if distance_cm < 70:
+        if distance_cm < MAX_DISTANCE:
             print("Object detected! Starting capture...")
             capturing = True
         else:
@@ -92,7 +127,7 @@ while True:
             continue
 
     if capturing:
-        if distance_cm < 60:
+        if distance_cm < MAX_DISTANCE:
             image_count += 1
 
             # Save sensor data
@@ -206,7 +241,6 @@ if stitched_rows:
         if status == cv2.Stitcher_OK:
             full_pano = full_pano_new
             print(f"Row {i} stitched successfully.")
-            cv2.imwrite(f"partial_stitch_{i}.tiff", full_pano)
         else:
             print(f"Warning: Stitcher failed at row {i}, keeping previous panorama.")
     # Rotate back 90° CW
@@ -228,6 +262,18 @@ if stitched_rows:
     else:
         print(f"Error stitching rows vertically. Status: {status}")
     # --- cropped stitching end ---
+
+    # --- cropped2 stitching ---
+    cropped_rotated_rows = [crop_to_strict_nonblack_rectangle(row)for row in rotated_rows]
+    status, cropped_stitched_rotated = stitcher.stitch(cropped_rotated_rows)
+    if status == cv2.Stitcher_OK:
+        # Rotate back 90° clockwise
+        full_scan3 = cv2.rotate(cropped_stitched_rotated, cv2.ROTATE_90_CLOCKWISE)
+        cv2.imwrite("stitched_result_cropped2_A4.tiff", full_scan3)
+        print("Full scan stitched successfully.")
+    else:
+        print(f"Error stitching rows vertically. Status: {status}")
+    # --- cropped2 stitching end ---
     
 
 cv2.waitKey(0)
