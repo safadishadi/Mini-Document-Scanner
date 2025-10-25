@@ -118,7 +118,7 @@ while True:
         time.sleep(0.1)
         continue
 
-    print(f"Distance: {distance_cm:.1f} cm, Displacement Y: {displacement_y:.1f} cm")
+    print(f"Distance: {distance_cm:.1f} cm, Hight Displacement: {displacement_y:.1f} cm")
 
     if not capturing:
         if distance_cm < MAX_DISTANCE:
@@ -148,7 +148,7 @@ while True:
 
             # Check for new row start
             if displacement_y > 7:
-                print(f"---New row detected (Y displacement {displacement_y:.1f} cm) Moving to next row---")
+                print(f"---New row detected (hight displacement {displacement_y:.1f} cm) Moving to next row---")
 
                 # Discard first image of the first row
                 if current_row == 0 and len(row_image_paths) > 0:
@@ -245,7 +245,12 @@ if stitched_rows:
         print(f"Error stitching rows vertically. Status: {status}")
     # --- cropped stitching end ---
 
-# TODO: delete all rows
+# Delete all stitched rows after final stitching
+for row_idx, row_img in enumerate(stitched_rows):
+    row_path = os.path.join(output_dir, f"stitched_row_{row_idx}.tiff")
+    if os.path.exists(row_path):
+        os.remove(row_path)
+        print(f"Deleted temporary stitched row: {row_path}")
     
 
 cv2.waitKey(0)
