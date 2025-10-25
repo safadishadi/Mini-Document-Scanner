@@ -3,7 +3,7 @@ import glob
 import os
 import numpy as np
 
-def crop_to_strict_nonblack_rectangle(img, threshold=30, black_ratio_limit=0.35):
+def crop_to_strict_nonblack_rectangle(img, threshold=50, black_ratio_limit=0.80):
     """
     Crops aggressively to remove all black edges, even uneven ones.
     Allows up to black_ratio_limit fraction of dark pixels per row/column.
@@ -51,8 +51,8 @@ print("Current working directory:", os.getcwd())
 image_paths = sorted(glob.glob("*.tiff"))
 print("Found TIFFs:", image_paths)
 
-# Limit to first 4 if more exist
-image_paths = image_paths[:4]
+# Limit to first 8 if more exist
+image_paths = image_paths[:8]
 
 if not image_paths:
     print("No TIFF images found in current directory.")
@@ -106,4 +106,5 @@ else:
 
 # Save result (stitched or stacked)
 cv2.imwrite("stitched_experiment_result.tiff", full_scan)
-print("✅ Final result saved as stitched_experiment_result.tiff")
+cv2.imwrite("stitched_experiment_result_cropped.tiff", crop_to_strict_nonblack_rectangle(full_scan))
+print("✅ Final result saved ")

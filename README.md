@@ -2,11 +2,11 @@
 
 **Project Overview:**
 
-This project is is a software and hardware implementation of a miniature sized document scanner.  Using a circuit board with sensors and a microcontroller, the functionality is an intuitive user friendly interface that automate the image capturing and the transmittion of the images via wifi to a server that hosts the main image stitching algorithm that produces the final result.
+This project is is a software and hardware implementation of a miniature sized document scanner.  Using a circuit board with sensors and a microcontroller, the functionality is an intuitive user friendly interface that automates the image capturing and the transmittion of the images via wifi to a server that hosts the main image stitching algorithm that produces the final result.
 
 **Software Components:**
 
-* The microcontrollers code is implemented in c in arduinoIDE, it initializes and controlles the sensores (Camera, Laser Distance, Gyroscope, Accelerometer, Antenna).
+* The microcontrollers code is implemented in c in arduinoIDE, it initializes and controlles the sensores (Camera, Laser Distance, Gyroscope, Accelerometer, Antenna), and is responsible for doing spacial an temporal calculation, in order to send it as metadata with each image.
 * The main stitching algorithm is implemented in python, it consists of a basic server that Recieves images corresponding to parts of the document and reconstructs them into a final result.
 
 **Operation Guide:**
@@ -29,7 +29,8 @@ This project is is a software and hardware implementation of a miniature sized d
   * after calibration is done, lift board to face document with a distance greater than 60cm.
   * wait until z displacement measurment stabilizes as a positive number.
   * bring board closer than 60cm to automatically start scanning.
-  * move as horizontal rows, while doubling the capturing at the start of each row.
+  * do a double capture of the first image of first row.
+  * move as horizontal rows.
   * at the end of each row, lower the board at a decent, not slow speed, (z measurement goes negative) to start next row.
   * do a double capture for the last image of last row.
   * flip or distance the board (>60cm) to automatically stop capturing.
@@ -40,19 +41,14 @@ This project is is a software and hardware implementation of a miniature sized d
 ```
 ├── src/
 │   ├── EmbeddedCode/
-│      ├── EmbeddedCode.ino
-│      └── TODO
+│      └── EmbeddedCode.ino
 │   └── PythonCode/
-│      ├── TODO
-│      └── TODO
-├── tests/
-│   ├── TODO
-│   └── TODO
+│      └── main.py
 └── README.md
 ```
 
 **Authors:**
 
-Hani Sabihi
+Hani Sabehiy
 
 Shadi Safadi
